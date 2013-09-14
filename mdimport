@@ -1,0 +1,152 @@
+#!/usr/bin/env python
+# Import and update metadata of audio files
+
+# Imports {{{1
+from __future__ import division, print_function
+try:
+    from kskutils import Info, toStr
+    import argparse
+    from mutagen.oggvorbis import OggVorbis as OggMetaData
+    from mutagen.oggvorbis import OggVorbisHeaderError as OggNoHeaderError
+    from mutagen.id3 import ID3 as MP3MetaData
+    from mutagen.id3 import ID3NoHeaderError as MP3NoHeaderError
+    from mutagen.id3 import TIT2, TALB, TPE1, TRCK, TPOS
+    from mutagen.flac import FLAC as FlacMetaData
+    from mutagen.flac import FLACNoHeaderError as FlacNoHeaderError
+    from fileutils import move, exists, mkdir, getExt, getHead, makePath
+    from textwrap import dedent
+    from base64 import standard_b64decode
+    import re
+    import sys
+
+# Globals {{{1
+    filetypes = ['ogg', 'mp3', 'flac']
+
+# Utilities {{{1
+    def check(name):
+        if not name:
+            return ''
+        if '/' in name:
+            print("Slash found in filename (%s), replaced with ';'." % name)
+            name = '; '.join([each.strip() for each in name.split('/')])
+        return name
+
+    def extract_number(num):
+        if not num:
+            return ''
+        num = num.split('/')[0]
+        try:
+            if not int(num):
+                return ''
+        except ValueError:
+            pass
+        return num.strip()
+
+# Command Line {{{1
+    prog_name = sys.argv[0]
+    parser = argparse.ArgumentParser(
+        description=dedent("""\
+            Either import and update the metadata of audio files.
+            Must be run after mdexport (data.py file must exist).
+        """))
+    parser.add_argument(
+        '-a', '--album', action='store_true',
+        help="Create directory for album and place song in it.")
+    parser.add_argument(
+        '-A', '--artist', action='store_true',
+        help="Create directory for artist and album and place song in it.")
+    parser.add_argument(
+        '-p', '--playlist', action='store_true',
+        help="Create playlist.")
+    cmdline = parser.parse_args()
+
+# Read data file{{{1
+    if not exists('data.py'):
+        exit("data.py is missing, did you run mdexport?")
+    sys.path=['.'] + sys.path
+    import data
+
+# Main loop {{{1
+    files = []
+    for each in data.files:
+        src = standard_b64decode(each['src'])
+        if not exists(src):
+            print('%s: file missing' % src)
+            continue
+        ext = getExt(src).lower()
+        directory = getHead(src)
+        artist = each.get('artist', None)
+        album = each.get('album', None)
+        disk = each.get('disk', None)
+        title = each.get('title', None)
+        track = each.get('track', None)
+        artist = artist.strip() if artist else ''
+        album = album.strip() if album else ''
+        disk = extract_number(disk if disk != '1/1' else None)
+        title = title.strip() if title else ''
+        track = extract_number(track)
+
+        if ext == 'ogg':
+            MetaData = OggMetaData
+            NoHeaderError = OggNoHeaderError
+        elif ext == 'mp3':
+            MetaData = MP3MetaData
+            NoHeaderError = MP3NoHeaderError
+        elif ext == 'flac':
+            MetaData = FlacMetaData
+            NoHeaderError = FlacNoHeaderError
+        else:
+            print("%s: unsupported file type; skipped." % each)
+            continue
+
+        # Update the metadata
+        try:
+            metadata = MetaData(src)
+        except NoHeaderError:
+            metadata = MetaData()
+
+        if ext == 'mp3':
+            metadata["TPE1"] = TPE1(encoding=3, text=unicode(artist))
+            metadata["TALB"] = TALB(encoding=3, text=unicode(album))
+            metadata["TPOS"] = TPOS(encoding=3, text=unicode(disk))
+            metadata["TIT2"] = TIT2(encoding=3, text=unicode(title))
+            metadata["TRCK"] = TRCK(encoding=3, text=unicode(track))
+        else:
+            metadata['artist'] = artist
+            metadata['album'] = album
+            metadata['discnumber'] = disk
+            metadata['title'] = title
+            metadata['tracknumber'] = track
+        metadata.save()
+
+        # Move the file
+        if track:
+            track = "{:>02}".format(track)
+            if disk:
+                disk = str(disk)
+                filename = '%s.%s %s.%s' % (disk, track, title, ext)
+            else:
+                filename = '%s %s.%s' % (track, title, ext)
+        else:
+            filename = '%s.%s' % (title, ext)
+        if cmdline.artist:
+            directory = makePath(check(artist), check(album))
+        elif cmdline.album:
+            directory = check(album)
+        if directory:
+            mkdir(directory)
+        dest = makePath(directory, check(filename))
+        files.append(dest)
+        move(src, dest)
+
+    if cmdline.playlist:
+        with open('playlist.m3u', 'w') as f:
+            f.write('\n'.join(files) + '\n')
+
+except KeyboardInterrupt:
+    sys.exit('Killed by user')
+except IOError as err:
+    print('%s: %s: %s, skipping ...' % (
+        prog_name, err.filename, err.strerror))
+except ImportError:
+    exit("data.py is missing, did you run mdexport?")

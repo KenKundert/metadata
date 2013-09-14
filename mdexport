@@ -1,0 +1,114 @@
+#!/usr/bin/env python
+# Export metadata from audio files
+
+# Imports {{{1
+from __future__ import division, print_function
+try:
+    from kskutils import Info, toStr
+    import argparse
+    from mutagen.oggvorbis import OggVorbis as OggMetaData
+    from mutagen.oggvorbis import OggVorbisHeaderError as OggNoHeaderError
+    from mutagen.id3 import ID3 as MP3MetaData
+    from mutagen.id3 import ID3NoHeaderError as MP3NoHeaderError
+    from mutagen.id3 import TIT2, TALB, TPE1, TRCK, TPOS
+    from mutagen.flac import FLAC as FlacMetaData
+    from mutagen.flac import FLACNoHeaderError as FlacNoHeaderError
+    from fileutils import remove, getExt, getAll, isFile, isDir, makePath
+    from base64 import standard_b64encode
+    import re
+    import sys
+
+# Globals {{{1
+    music_extensions = ['ogg', 'mp3', 'flac']
+    playlist_extension = 'm3u'
+
+# Command Line {{{1
+    prog_name = sys.argv[0]
+    parser = argparse.ArgumentParser(
+        description="Export the metadata from audio files.")
+    parser.add_argument(
+        '-p', '--playlist', action='store_true',
+        help="Create playlist.")
+    parser.add_argument(
+        'files', nargs='+', default='', metavar='file',
+        help="audio files")
+    cmdline = parser.parse_args()
+
+# Expand file list {{{1
+    def add_files(processed, new):
+        for path in new:
+            if isFile(path):
+                ext = getExt(path).lower()
+                if ext in music_extensions:
+                    processed.append(path)
+                elif ext == playlist_extension:
+                    with open(path) as f:
+                        add_files(processed, f.read().split('\n'))
+                else:
+                    print("%s: unsupported file type; skipped." % path)
+            elif isDir(path):
+                add_files(processed, sorted(getAll(makePath(path, '*'))))
+    files = []
+    add_files(files, cmdline.files)
+    if not files:
+        print("No files to process.")
+        sys.exit()
+
+# Main loop {{{1
+    with open('data.py', 'w') as f:
+        f.write("files = [\n")
+        for each in files:
+            ext = getExt(each).lower()
+            if ext == 'ogg':
+                MetaData = OggMetaData
+                NoHeaderError = OggNoHeaderError
+            elif ext == 'mp3':
+                MetaData = MP3MetaData
+                NoHeaderError = MP3NoHeaderError
+            elif ext == 'flac':
+                MetaData = FlacMetaData
+                NoHeaderError = FlacNoHeaderError
+            else:
+                raise AssertionError
+
+            try:
+                metadata = MetaData(each)
+            except NoHeaderError:
+                metadata = MetaData()
+
+            if ext == "mp3":
+                artist = metadata.get("TPE1", [None])[0]
+                album = metadata.get("TALB", [None])[0]
+                disk = metadata.get("TPOS", [None])[0]
+                title = metadata.get("TIT2", [None])[0]
+                track = metadata.get("TRCK", [None])[0]
+            else:
+                artist = metadata.get('artist', [None])[0]
+                album = metadata.get('album', [None])[0]
+                disk = metadata.get('discnumber', [None])[0]
+                title = metadata.get('title', [None])[0]
+                track = metadata.get('tracknumber', [None])[0]
+
+            f.write("    {   # %s\n" % repr(each))
+            f.write("        'src': %s,  # DO NOT CHANGE\n" % repr(
+                standard_b64encode(each)))
+            f.write("        'title': %s,\n" % repr(title))
+            f.write("        'artist': %s,\n" % repr(artist))
+            f.write("        'album': %s,\n" % repr(album))
+            f.write("        'disk': %s,\n" % repr(disk))
+            f.write("        'track': %s,\n" % repr(track))
+            f.write("    },\n")
+        f.write("]\n")
+        remove('data.pyc')
+    print("The file 'data.py' has be created.")
+    print("Edit this file and run mdimport to change the metadata.")
+    if cmdline.playlist:
+        with open('playlist.m3u', 'w') as f:
+            f.write('\n'.join(files) + '\n')
+        print("The file 'playlist.m3u' has be created.")
+
+except KeyboardInterrupt:
+    sys.exit('Killed by user')
+except IOError as err:
+    print('%s: %s: %s, skipping ...' % (
+        prog_name, err.filename, err.strerror))
