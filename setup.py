@@ -13,4 +13,5 @@ setup(
   , author="Ken Kundert"
   , author_email='theNurd@nurdletech.com'
   , scripts=['mdexport', 'mdimport']
+  , license='GPLv3'
 )
