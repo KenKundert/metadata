@@ -82,6 +82,11 @@ try:
         sys.exit()
 
 # Map filenames {{{1
+    def map_directory(name):
+        if name:
+            return map_filename(name)
+        return '.'
+
     def map_filename(name):
         for bad, good in required_filename_string_mappings.items():
             name = good.join(name.split(bad))
@@ -102,6 +107,7 @@ try:
 
 # Main loop {{{1
     with open('data.py', 'w') as f:
+        f.write("# coding=utf-8\n")
         f.write("files = [\n")
         for path in files:
             ext = getExt(path).lower()
@@ -149,9 +155,9 @@ try:
 
             # create proposed filename
             if cmdline.artist:
-                directory = makePath(map_filename(artist), map_filename(album))
+                directory = makePath(map_directory(artist), map_directory(album))
             elif cmdline.album:
-                directory = map_filename(album)
+                directory = map_directory(album)
             else:
                 directory = getHead(path)
 
