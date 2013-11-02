@@ -13,7 +13,9 @@ try:
     from mutagen.id3 import TIT2, TALB, TPE1, TRCK, TPOS
     from mutagen.flac import FLAC as FlacMetaData
     from mutagen.flac import FLACNoHeaderError as FlacNoHeaderError
-    from fileutils import remove, getExt, getAll, isFile, isDir, makePath
+    from fileutils import (
+        remove, getHead, getExt, getAll, isFile, isDir, makePath
+    )
     from base64 import standard_b64encode
     import re
     import sys
@@ -22,6 +24,22 @@ try:
     music_extensions = ['ogg', 'mp3', 'flac']
     playlist_extension = 'm3u'
 
+    # Required filename mappings (must include slash)
+    # These mappings always occur
+    required_filename_string_mappings = {
+        ' / ': '; ',
+        '/': '-',
+        u'\u2019': "'",
+    }
+
+    # Other filename mappings
+    # These are performed only if user requests filename mapping
+    optional_filename_string_mappings = {
+        "'": '',
+        '"': '',
+        "!": '',
+    }
+
 # Command Line {{{1
     prog_name = sys.argv[0]
     parser = argparse.ArgumentParser(
@@ -29,6 +47,15 @@ try:
     parser.add_argument(
         '-p', '--playlist', action='store_true',
         help="Create playlist.")
+    parser.add_argument(
+        '-a', '--album', action='store_true',
+        help="Add album title to the filename as a directory.")
+    parser.add_argument(
+        '-A', '--artist', action='store_true',
+        help="Add artist and album title to the filename as directories.")
+    parser.add_argument(
+        '-m', '--map-filenames', action='store_true',
+        help="Map filenames (downcase, remove spaces, map illegal characters.).")
     parser.add_argument(
         'files', nargs='+', default='', metavar='file',
         help="audio files")
@@ -54,11 +81,30 @@ try:
         print("No files to process.")
         sys.exit()
 
+# Map filenames {{{1
+    def map_filename(name):
+        for bad, good in required_filename_string_mappings.items():
+            name = good.join(name.split(bad))
+        if cmdline.map_filenames:
+            for bad, good in optional_filename_string_mappings.items():
+                name = good.join(name.split(bad))
+            try:
+                name = name.encode(encoding='ascii', errors='strict')
+            except UnicodeEncodeError:
+                print(
+                    "Illegal character found in %s, search for '&#' to fix" %
+                        repr(name)
+                )
+                name = name.encode(encoding='ascii', errors='xmlcharrefreplace')
+            name = name.lower().replace(' ', '_')
+
+        return name
+
 # Main loop {{{1
     with open('data.py', 'w') as f:
         f.write("files = [\n")
-        for each in files:
-            ext = getExt(each).lower()
+        for path in files:
+            ext = getExt(path).lower()
             if ext == 'ogg':
                 MetaData = OggMetaData
                 NoHeaderError = OggNoHeaderError
@@ -72,7 +118,7 @@ try:
                 raise AssertionError
 
             try:
-                metadata = MetaData(each)
+                metadata = MetaData(path)
             except NoHeaderError:
                 metadata = MetaData()
 
@@ -89,14 +135,37 @@ try:
                 title = metadata.get('title', [None])[0]
                 track = metadata.get('tracknumber', [None])[0]
 
-            f.write("    {   # %s\n" % repr(each))
+            # create proposed filename
+            if track:
+                track = "{:>02}".format(track)
+                if disk:
+                    disk = str(disk)
+                    filename = '%s.%s %s.%s' % (disk, track, title, ext)
+                else:
+                    filename = '%s %s.%s' % (track, title, ext)
+            else:
+                filename = '%s.%s' % (title, ext)
+            filename = map_filename(filename)
+
+            # create proposed filename
+            if cmdline.artist:
+                directory = makePath(map_filename(artist), map_filename(album))
+            elif cmdline.album:
+                directory = map_filename(album)
+            else:
+                directory = getHead(path)
+
+            f.write("    {   # %s\n" % path)
             f.write("        'src': %s,  # DO NOT CHANGE\n" % repr(
-                standard_b64encode(each)))
+                standard_b64encode(path)))
             f.write("        'title': %s,\n" % repr(title))
             f.write("        'artist': %s,\n" % repr(artist))
             f.write("        'album': %s,\n" % repr(album))
             f.write("        'disk': %s,\n" % repr(disk))
             f.write("        'track': %s,\n" % repr(track))
+            f.write("        'filename': %s,\n" % repr(
+                makePath(directory, filename)
+            ))
             f.write("    },\n")
         f.write("]\n")
         remove('data.pyc')

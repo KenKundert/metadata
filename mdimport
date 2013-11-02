@@ -13,7 +13,9 @@ try:
     from mutagen.id3 import TIT2, TALB, TPE1, TRCK, TPOS
     from mutagen.flac import FLAC as FlacMetaData
     from mutagen.flac import FLACNoHeaderError as FlacNoHeaderError
-    from fileutils import move, exists, mkdir, getExt, getHead, makePath
+    from fileutils import (
+        move, exists, mkdir, getExt, getHead, getTail, makePath
+    )
     from textwrap import dedent
     from base64 import standard_b64decode
     import re
@@ -23,14 +25,6 @@ try:
     filetypes = ['ogg', 'mp3', 'flac']
 
 # Utilities {{{1
-    def check(name):
-        if not name:
-            return ''
-        if '/' in name:
-            print("Slash found in filename (%s), replaced with ';'." % name)
-            name = '; '.join([each.strip() for each in name.split('/')])
-        return name
-
     def extract_number(num):
         if not num:
             return ''
@@ -50,12 +44,6 @@ try:
             Must be run after mdexport (data.py file must exist).
         """))
     parser.add_argument(
-        '-a', '--album', action='store_true',
-        help="Create directory for album and place song in it.")
-    parser.add_argument(
-        '-A', '--artist', action='store_true',
-        help="Create directory for artist and album and place song in it.")
-    parser.add_argument(
         '-p', '--playlist', action='store_true',
         help="Create playlist.")
     cmdline = parser.parse_args()
@@ -74,7 +62,7 @@ try:
             print('%s: file missing' % src)
             continue
         ext = getExt(src).lower()
-        directory = getHead(src)
+        dest = each['filename']
         artist = each.get('artist', None)
         album = each.get('album', None)
         disk = each.get('disk', None)
@@ -120,22 +108,10 @@ try:
         metadata.save()
 
         # Move the file
-        if track:
-            track = "{:>02}".format(track)
-            if disk:
-                disk = str(disk)
-                filename = '%s.%s %s.%s' % (disk, track, title, ext)
-            else:
-                filename = '%s %s.%s' % (track, title, ext)
-        else:
-            filename = '%s.%s' % (title, ext)
-        if cmdline.artist:
-            directory = makePath(check(artist), check(album))
-        elif cmdline.album:
-            directory = check(album)
+        directory = getHead(dest)
+        filename = getTail(dest)
         if directory:
             mkdir(directory)
-        dest = makePath(directory, check(filename))
         files.append(dest)
         move(src, dest)
 
