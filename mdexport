@@ -29,7 +29,6 @@ try:
     required_filename_string_mappings = {
         ' / ': '; ',
         '/': '-',
-        u'\u2019': "'",
     }
 
     # Other filename mappings
@@ -38,6 +37,9 @@ try:
         "'": '',
         '"': '',
         "!": '',
+        ",": '',
+        u'\u2019': "'",
+        u'\xe9': "e",
     }
 
 # Command Line {{{1
