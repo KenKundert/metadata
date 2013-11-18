@@ -23,6 +23,7 @@ try:
 # Globals {{{1
     music_extensions = ['ogg', 'mp3', 'flac']
     playlist_extension = 'm3u'
+    map_space_to = '_'
 
     # Required filename mappings (must include slash)
     # These mappings always occur
@@ -103,7 +104,7 @@ try:
                         repr(name)
                 )
                 name = name.encode(encoding='ascii', errors='xmlcharrefreplace')
-            name = name.lower().replace(' ', '_')
+            name = name.lower().replace(' ', map_space_to)
 
         return name
 
