@@ -24,7 +24,7 @@ To change the metadata for audio files run::
 
 The program supports .ogg, .mp3, and .flac files. It also supports .m3u 
 playlists and directories.  If you specify a playlist, all of the music files 
-reference in the play list are read. If you specify a directory, all of the 
+referenced in the play list are read. If you specify a directory, all of the 
 music files, playlists and directories in that directory are included.  
 *mdexport* creates ``data.py`` that includes all of the metadata.
 
