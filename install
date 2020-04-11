@@ -1,9 +1,9 @@
 #!/bin/csh -f
 # Installs mdexport and mdimport
 
-# get the version number for python2
+# get the version number for python3
 set vers=`python -c 'import sys; print("%s.%s" % (sys.version_info.major, sys.version_info.minor))'`
-echo "Installing fvi to ~/.home/bin (Python$vers)."
+echo "Installing metadata to ~/.home/bin (Python$vers)."
 
 # remove build directories from a previous install to assure a clean install
 set nonomatch
