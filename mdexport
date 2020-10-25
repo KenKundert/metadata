@@ -1,192 +1,169 @@
 #!/usr/bin/env python
-# Export metadata from audio files
+# Usage {{{1
+"""
+Export the metadata from audio files
+
+usage:
+    mdexport [options] <file>...
+
+options:
+  -h, --help           show this help message and exit
+  -p, --playlist       Create playlist.
+  -a, --album          Add album title to the filename as a directory.
+  -A, --artist         Add artist and album title to the filename as directories.
+  -m, --map-filenames  Map filenames (downcase, remove spaces, map illegal characters).
+"""
 
 # Imports {{{1
-from __future__ import division, print_function
-try:
-    from kskutils import Info, toStr
-    import argparse
-    from mutagen.oggvorbis import OggVorbis as OggMetaData
-    from mutagen.oggvorbis import OggVorbisHeaderError as OggNoHeaderError
-    from mutagen.id3 import ID3 as MP3MetaData
-    from mutagen.id3 import ID3NoHeaderError as MP3NoHeaderError
-    from mutagen.id3 import TIT2, TALB, TPE1, TRCK, TPOS
-    from mutagen.flac import FLAC as FlacMetaData
-    from mutagen.flac import FLACNoHeaderError as FlacNoHeaderError
-    from fileutils import (
-        remove, getHead, getExt, getAll, isFile, isDir, makePath
-    )
-    from base64 import standard_b64encode
-    import re
-    import sys
+from docopt import docopt
+from inform import display, fatal, os_error, warn
+import nestedtext as nt
+from mutagen.oggvorbis import (
+    OggVorbis as OggMetaData,
+    OggVorbisHeaderError as OggNoHeaderError,
+)
+from metadata import (
+    flac_extensions,
+    id3_extensions,
+    map_directory,
+    map_filename,
+    metadata_filename,
+    music_extensions,
+    ogg_extensions,
+    playlist_extension,
+    playlist_filename,
+    use_aggressive_mapping,
+)
+from mutagen.id3 import (
+    ID3 as MP3MetaData,
+    ID3NoHeaderError as MP3NoHeaderError,
+    TIT2, TALB, TPE1, TRCK, TPOS
+)
+from mutagen.flac import (
+    FLAC as FlacMetaData,
+    FLACNoHeaderError as FlacNoHeaderError,
+)
+from shlib import to_path, rm
+from base64 import standard_b64encode
 
-# Globals {{{1
-    music_extensions = ['ogg', 'mp3', 'flac']
-    playlist_extension = 'm3u'
-    map_space_to = '_'
-
-    # Required filename mappings (must include slash)
-    # These mappings always occur
-    required_filename_string_mappings = {
-        ' / ': '; ',
-        '/': '-',
-    }
-
-    # Other filename mappings
-    # These are performed only if user requests filename mapping
-    optional_filename_string_mappings = {
-        "'": '',
-        '"': '',
-        "!": '',
-        ",": '',
-        u'\u2019': "'",
-        u'\xe9': "e",
-    }
+# Utility functions {{{1
+def add_files(processed, new):
+    for each in new:
+        path = to_path(each)
+        if path.is_file():
+            ext = path.suffix.lower()
+            if ext in music_extensions:
+                processed.append(path)
+            elif ext == playlist_extension:
+                add_files(processed, path.read_text().split('\n'))
+            else:
+                warn(f"unsupported file type {ext}; skipped.", culprit=path)
+        elif isDir(path):
+            add_files(processed, sorted(ls(path, '*')))
 
 # Command Line {{{1
-    prog_name = sys.argv[0]
-    parser = argparse.ArgumentParser(
-        description="Export the metadata from audio files.")
-    parser.add_argument(
-        '-p', '--playlist', action='store_true',
-        help="Create playlist.")
-    parser.add_argument(
-        '-a', '--album', action='store_true',
-        help="Add album title to the filename as a directory.")
-    parser.add_argument(
-        '-A', '--artist', action='store_true',
-        help="Add artist and album title to the filename as directories.")
-    parser.add_argument(
-        '-m', '--map-filenames', action='store_true',
-        help="Map filenames (downcase, remove spaces, map illegal characters.).")
-    parser.add_argument(
-        'files', nargs='+', default='', metavar='file',
-        help="audio files")
-    cmdline = parser.parse_args()
+try:
+    cmdline = docopt(__doc__)
 
-# Expand file list {{{1
-    def add_files(processed, new):
-        for path in new:
-            if isFile(path):
-                ext = getExt(path).lower()
-                if ext in music_extensions:
-                    processed.append(path)
-                elif ext == playlist_extension:
-                    with open(path) as f:
-                        add_files(processed, f.read().split('\n'))
-                else:
-                    print("%s: unsupported file type; skipped." % path)
-            elif isDir(path):
-                add_files(processed, sorted(getAll(makePath(path, '*'))))
     files = []
-    add_files(files, cmdline.files)
+    add_files(files, cmdline['<file>'])
     if not files:
-        print("No files to process.")
-        sys.exit()
-
-# Map filenames {{{1
-    def map_directory(name):
-        if name:
-            return map_filename(name)
-        return '.'
-
-    def map_filename(name):
-        for bad, good in required_filename_string_mappings.items():
-            name = good.join(name.split(bad))
-        if cmdline.map_filenames:
-            for bad, good in optional_filename_string_mappings.items():
-                name = good.join(name.split(bad))
-            try:
-                name = name.encode(encoding='ascii', errors='strict')
-            except UnicodeEncodeError:
-                print(
-                    "Illegal character found in %s, search for '&#' to fix" %
-                        repr(name)
-                )
-                name = name.encode(encoding='ascii', errors='xmlcharrefreplace')
-            name = name.lower().replace(' ', map_space_to)
-
-        return name
+        display("No files to process.")
+        raise SystemExit()
+    if cmdline['--map-filenames']:
+        use_aggressive_mapping()
 
 # Main loop {{{1
-    with open('data.py', 'w') as f:
-        f.write("# coding=utf-8\n")
-        f.write("files = [\n")
-        for path in files:
-            ext = getExt(path).lower()
-            if ext == 'ogg':
-                MetaData = OggMetaData
-                NoHeaderError = OggNoHeaderError
-            elif ext == 'mp3':
-                MetaData = MP3MetaData
-                NoHeaderError = MP3NoHeaderError
-            elif ext == 'flac':
-                MetaData = FlacMetaData
-                NoHeaderError = FlacNoHeaderError
-            else:
-                raise AssertionError
+    entries = []
+    seen = set()
+    for path in files:
+        entry = {}
 
-            try:
-                metadata = MetaData(path)
-            except NoHeaderError:
-                metadata = MetaData()
+        ext = path.suffix.lower()
+        if ext in ogg_extensions:
+            MetaData = OggMetaData
+            NoHeaderError = OggNoHeaderError
+        elif ext in id3_extensions:
+            MetaData = MP3MetaData
+            NoHeaderError = MP3NoHeaderError
+        elif ext in flac_extensions:
+            MetaData = FlacMetaData
+            NoHeaderError = FlacNoHeaderError
+        else:
+            warn("unsupported file type; skipped.", culprit=path)
+            continue
 
-            if ext == "mp3":
-                artist = metadata.get("TPE1", [None])[0]
-                album = metadata.get("TALB", [None])[0]
-                disk = metadata.get("TPOS", [None])[0]
-                title = metadata.get("TIT2", [None])[0]
-                track = metadata.get("TRCK", [None])[0]
-            else:
-                artist = metadata.get('artist', [None])[0]
-                album = metadata.get('album', [None])[0]
-                disk = metadata.get('discnumber', [None])[0]
-                title = metadata.get('title', [None])[0]
-                track = metadata.get('tracknumber', [None])[0]
+        try:
+            metadata = MetaData(path)
+        except NoHeaderError:
+            metadata = MetaData()
 
-            # create proposed filename
-            if track:
-                track = "{:>02}".format(track)
-                if disk:
-                    disk = str(disk)
-                    filename = '%s.%s %s.%s' % (disk, track, title, ext)
-                else:
-                    filename = '%s %s.%s' % (track, title, ext)
+        if ext in id3_extensions:
+            artist = metadata.get("TPE1", [None])[0]
+            album = metadata.get("TALB", [None])[0]
+            disk = metadata.get("TPOS", [None])[0]
+            title = metadata.get("TIT2", [None])[0]
+            track = metadata.get("TRCK", [None])[0]
+        else:
+            artist = metadata.get('artist', [None])[0]
+            album = metadata.get('album', [None])[0]
+            disk = metadata.get('discnumber', [None])[0]
+            title = metadata.get('title', [None])[0]
+            track = metadata.get('tracknumber', [None])[0]
+
+        # create proposed filename
+        if track:
+            track = f"{track:>02}"
+            if disk:
+                disk = str(disk)
+                filename = f'{disk}.{track} {title}{ext}'
             else:
-                filename = '%s.%s' % (title, ext)
+                filename = f'{track} {title}{ext}'
+        elif title:
+            filename = f'{title}{ext}'
+        else:
+            filename = None
+
+        # extract directory
+        if cmdline['--artist']:
+            directory = to_path(map_directory(artist), map_directory(album))
+        elif cmdline['--album']:
+            directory = map_directory(album)
+        else:
+            directory = path.parent
+
+        entry['original filename'] = str(path)
+        encoded = standard_b64encode(str(path).encode('utf-8'))
+        entry['encoded filename (do not change)'] = encoded.decode('ascii')
+        if title:
+            entry['title'] = title
+        if artist:
+            entry['artist'] = artist
+        if album:
+            entry['album'] = album
+        if disk:
+            entry['disk'] = disk
+        if track:
+            entry['track'] = track
+        if filename:
             filename = map_filename(filename)
+            entry['filename'] = str(directory / filename)
+            if entry['filename'] in seen:
+                warn('duplicate filename.', culprit=entry['filename'])
+                seen.add(entry['filename'])
+        entries.append(entry)
 
-            # create proposed filename
-            if cmdline.artist:
-                directory = makePath(map_directory(artist), map_directory(album))
-            elif cmdline.album:
-                directory = map_directory(album)
-            else:
-                directory = getHead(path)
-
-            f.write("    {   # %s\n" % path)
-            f.write("        'src': %s,  # DO NOT CHANGE\n" % repr(
-                standard_b64encode(path)))
-            f.write("        'title': %s,\n" % repr(title))
-            f.write("        'artist': %s,\n" % repr(artist))
-            f.write("        'album': %s,\n" % repr(album))
-            f.write("        'disk': %s,\n" % repr(disk))
-            f.write("        'track': %s,\n" % repr(track))
-            f.write("        'filename': %s,\n" % repr(
-                makePath(directory, filename)
-            ))
-            f.write("    },\n")
-        f.write("]\n")
-        remove('data.pyc')
-    print("The file 'data.py' has be created.")
-    print("Edit this file and run mdimport to change the metadata.")
-    if cmdline.playlist:
-        with open('playlist.m3u', 'w') as f:
-            f.write('\n'.join(files) + '\n')
-        print("The file 'playlist.m3u' has be created.")
+    nt.dump(dict(entries=entries), metadata_filename)
+    display(f"The file '{metadata_filename}' has be created.")
+    display("Edit this file and run mdimport to change the metadata.")
+    if cmdline['--playlist']:
+        playlist_path = to_path(playlist_filename)
+        playlist_path.write_text('\n'.join(str(f) for f in files) + '\n')
+        display(f"The playlist has be created as {playlist_filename}.")
 
 except KeyboardInterrupt:
-    sys.exit('Killed by user')
-except IOError as err:
-    print('%s: %s: %s, skipping ...' % (
-        prog_name, err.filename, err.strerror))
+    raise SystemExit('Killed by user')
+except OSError as e:
+    fatal(os_error(e))
+except nt.NestedTextError as e:
+    e.terminate()

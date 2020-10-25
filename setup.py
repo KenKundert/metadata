@@ -1,17 +1,20 @@
 from setuptools import setup
-from textwrap import dedent
-
-# Create/update manpage before installling
-#import manpage
-#manpage.write()
 
 setup(
-    name='metadata'
-  , description=dedent("""\
-        Edit audio file metadata.
-    """)
-  , author="Ken Kundert"
-  , author_email='theNurd@nurdletech.com'
-  , scripts=['mdexport', 'mdimport']
-  , license='GPLv3'
+    name='metadata',
+    description="Edit audio file metadata.",
+    author="Ken Kundert",
+    author_email='theNurd@nurdletech.com',
+    py_modules = 'metadata'.split(),
+    python_requires = '>=3.6',
+    install_requires = """
+        docopt
+        inform
+        mutagen
+        nestedtext
+        shlib
+        voluptuous
+    """.split(),
+    scripts='mdexport mdimport'.split(),
+    license='GPLv3',
 )
