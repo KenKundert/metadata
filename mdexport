@@ -58,7 +58,7 @@ def add_files(processed, new):
                 add_files(processed, path.read_text().split('\n'))
             else:
                 warn(f"unsupported file type {ext}; skipped.", culprit=path)
-        elif isDir(path):
+        elif path.is_dir():
             add_files(processed, sorted(ls(path, '*')))
 
 # Command Line {{{1
@@ -150,7 +150,7 @@ try:
             entry['filename'] = str(directory / filename)
             if entry['filename'] in seen:
                 warn('duplicate filename.', culprit=entry['filename'])
-                seen.add(entry['filename'])
+            seen.add(entry['filename'])
         entries.append(entry)
 
     nt.dump(dict(entries=entries), metadata_filename)
