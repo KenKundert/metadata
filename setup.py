@@ -15,7 +15,7 @@ setup(
         shlib
         voluptuous
     """.split(),
-    scripts = 'mdexport mdimport fromflac'.split(),
+    scripts = 'mdexport mdimport'.split(),
     license = 'GPLv3',
     zip_safe = True,
 )
