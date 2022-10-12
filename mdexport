@@ -11,12 +11,14 @@ options:
   -p, --playlist       Create playlist.
   -a, --album          Add album title to the filename as a directory.
   -A, --artist         Add artist and album title to the filename as directories.
-  -m, --map-filenames  Map filenames (downcase, remove spaces, map illegal characters).
+  -t, --no-track       Remove disk and track number from the filename.
+  -m, --map-filenames  Map filenames (downcase, remove spaces, map illegal 
+characters).
 """
 
 # Imports {{{1
 from docopt import docopt
-from inform import display, fatal, os_error, warn
+from inform import display, fatal, join, os_error, ProgressBar, warn
 import nestedtext as nt
 from mutagen.oggvorbis import (
     OggVorbis as OggMetaData,
@@ -25,8 +27,9 @@ from mutagen.oggvorbis import (
 from metadata import (
     flac_extensions,
     id3_extensions,
-    map_directory,
-    map_filename,
+    clean_dirname,
+    clean_filename,
+    clean_name,
     metadata_filename,
     music_extensions,
     ogg_extensions,
@@ -61,6 +64,13 @@ def add_files(processed, new):
         elif path.is_dir():
             add_files(processed, sorted(ls(path, '*')))
 
+def to_integer(arg):
+    # Convert argument to an integer if possible, otherwise leave it alone
+    try:
+        return int(arg)
+    except:
+        return arg
+
 # Command Line {{{1
 try:
     cmdline = docopt(__doc__)
@@ -76,7 +86,7 @@ try:
 # Main loop {{{1
     entries = []
     seen = set()
-    for path in files:
+    for path in ProgressBar(files):
         entry = {}
 
         ext = path.suffix.lower()
@@ -110,15 +120,13 @@ try:
             disk = metadata.get('discnumber', [None])[0]
             title = metadata.get('title', [None])[0]
             track = metadata.get('tracknumber', [None])[0]
+        disk = to_integer(disk)
+        track = to_integer(track)
 
         # create proposed filename
-        if track:
-            track = f"{track:>02}"
-            if disk:
-                disk = str(disk)
-                filename = f'{disk}.{track} {title}{ext}'
-            else:
-                filename = f'{track} {title}{ext}'
+        if track and not cmdline['--no-track']:
+            prefix = join(track, disk, template=("{1}.{0:>02}", "{0:>02}"))
+            filename = f'{prefix} {title}{ext}'
         elif title:
             filename = f'{title}{ext}'
         else:
@@ -126,9 +134,9 @@ try:
 
         # extract directory
         if cmdline['--artist']:
-            directory = to_path(map_directory(artist), map_directory(album))
+            directory = to_path(clean_dirname(artist), clean_dirname(album))
         elif cmdline['--album']:
-            directory = map_directory(album)
+            directory = to_path(clean_dirname(album))
         else:
             directory = path.parent
 
@@ -136,17 +144,17 @@ try:
         encoded = standard_b64encode(str(path).encode('utf-8'))
         entry['encoded filename (do not change)'] = encoded.decode('ascii')
         if title:
-            entry['title'] = title
+            entry['title'] = clean_name(title)
         if artist:
-            entry['artist'] = artist
+            entry['artist'] = clean_name(artist)
         if album:
-            entry['album'] = album
+            entry['album'] = clean_name(album)
         if disk:
             entry['disk'] = disk
         if track:
             entry['track'] = track
         if filename:
-            filename = map_filename(filename)
+            filename = clean_filename(filename)
             entry['filename'] = str(directory / filename)
             if entry['filename'] in seen:
                 warn('duplicate filename.', culprit=entry['filename'])

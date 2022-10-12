@@ -16,12 +16,11 @@ Must be run after mdexport (metadata.nt file must exist).
 # Imports {{{1
 from base64 import standard_b64decode
 from docopt import docopt
-from inform import fatal, os_error, warn
+from inform import fatal, os_error, ProgressBar, warn
 import nestedtext as nt
 from metadata import (
     flac_extensions,
     id3_extensions,
-    map_filename,
     metadata_filename,
     ogg_extensions,
     playlist_filename,
@@ -99,7 +98,7 @@ try:
 
 # Main loop {{{1
     files = []
-    for entry in entries:
+    for entry in ProgressBar(entries):
         src = standard_b64decode(entry['encoded filename (do not change)'])
         src = to_path(src.decode('utf-8'))
         if not src.exists():
@@ -172,6 +171,7 @@ try:
             files.append(dest)
         else:
             files.append(src)
+    metadata_path.unlink()
 
     if cmdline['--playlist']:
         playlist_path = to_path(playlist_filename)

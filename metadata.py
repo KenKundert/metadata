@@ -15,7 +15,7 @@ map_space_to = '_'
 # Required filename mappings (must include slash)
 # These mappings always occur
 required_filename_string_mappings = {
-    ' / ': '; ',
+    ' / ': '+',
     '/': '-',
 }
 
@@ -26,21 +26,28 @@ optional_filename_string_mappings = {
     '"': '',
     "!": '',
     ",": '',
-    u'\u2019': "'",
+    "’": "",
 #    u'\xe9': "e",
 }
 aggressive_mapping = False
+
+# Name mappings
+name_string_mappings = {
+    "'": "’",
+    " - ": " — ",
+    " -- ": " — ",
+}
 
 def use_aggressive_mapping():
     global aggressive_mapping
     aggressive_mapping = True
 
-def map_directory(name):
+def clean_dirname(name):
     if name:
-        return map_filename(name)
+        return clean_filename(name)
     return '.'
 
-def map_filename(name):
+def clean_filename(name):
     name = str(name)
     for bad, good in required_filename_string_mappings.items():
         name = good.join(name.split(bad))
@@ -52,5 +59,12 @@ def map_filename(name):
         #except UnicodeEncodeError:
         #    warn("Illegal character found, search for '&#' to fix", culprit=name)
         #    name = name.encode(encoding='ascii', errors='xmlcharrefreplace')
+        name = name.replace(' - ', '-')
         name = name.lower().replace(' ', map_space_to)
     return name
+
+def clean_name(name):
+    for bad, good in name_string_mappings.items():
+        name = name.replace(bad, good)
+    return name
+
